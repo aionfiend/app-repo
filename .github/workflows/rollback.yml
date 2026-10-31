@@ -12,9 +12,9 @@ jobs:
           install -m 700 -d ~/.ssh
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "${{ secrets.SSH_PORT }}" -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
       - name: Rollback to previous version
-        run: ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "/opt/wiki/deploy.sh rollback"
+        run: ssh -p "${{ secrets.SSH_PORT }}" ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "/opt/wiki/deploy.sh rollback"
       - name: Notify
         if: always()
         run: |
