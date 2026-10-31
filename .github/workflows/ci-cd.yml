@@ -1,0 +1,84 @@
+name: ci-cd
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+      - name: yamllint
+        run: pip install yamllint && yamllint -d relaxed config.yml .github/workflows
+      - name: Unit tests
+        run: bash tests/unit.sh
+
+  build-test:
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image name (lowercase)
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wiki-app" >> "$GITHUB_ENV"
+      - name: Build image
+        run: docker build -t wiki-app:test .
+      - name: Scan image (Trivy, report only)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: wiki-app:test
+          severity: CRITICAL
+          exit-code: '0'
+      - name: Integration and functional tests
+        run: bash tests/integration.sh wiki-app:test
+      - name: Push image
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag wiki-app:test "$IMAGE:${GITHUB_SHA::7}"
+          docker tag wiki-app:test "$IMAGE:latest"
+          docker push "$IMAGE:${GITHUB_SHA::7}"
+          docker push "$IMAGE:latest"
+      - name: Notify on failure
+        if: failure()
+        run: |
+          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="CI FAILED: ${GITHUB_REPOSITORY}@${GITHUB_SHA::7}" > /dev/null
+
+  deploy:
+    needs: build-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "${{ secrets.SSH_PORT }}" -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+      - name: Notify start
+        run: |
+          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="Deploy started: ${GITHUB_SHA::7}" > /dev/null
+      - name: Deploy (blue-green)
+        run: |
+          SSH="ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | $SSH "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+          $SSH "/opt/wiki/deploy.sh deploy ${GITHUB_SHA::7}"
+      - name: Notify result
+        if: always()
+        run: |
+          curl -s "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="Deploy ${GITHUB_SHA::7}: ${{ job.status }} (on failure traffic stays on the old version)" > /dev/null
