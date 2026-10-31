@@ -33,7 +33,7 @@ jobs:
       - name: Build image
         run: docker build -t wiki-app:test .
       - name: Scan image (Trivy, report only)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: wiki-app:test
           severity: CRITICAL
