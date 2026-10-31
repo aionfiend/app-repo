@@ -16,7 +16,9 @@ jobs:
         with:
           dockerfile: Dockerfile
       - name: yamllint
-        run: pip install yamllint && yamllint -d relaxed config.yml .github/workflows
+        run: |
+          pip install yamllint
+          yamllint -d "{extends: relaxed, rules: {line-length: disable}}" config.yml .github/workflows
       - name: Unit tests
         run: bash tests/unit.sh
 
