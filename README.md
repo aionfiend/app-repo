@@ -20,3 +20,5 @@ Workflow `ci-cd.yml`: lint (hadolint, yamllint) -> unit -> build -> Trivy -> int
 `SSH_HOST`, `SSH_USER`, `SSH_KEY`, `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`
 
 Проект сдаётся с демонстрацией blue-green деплоя и отката.
+
+asdasdasd
